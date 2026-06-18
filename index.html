@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>로봇 음성 안내 제어 시스템</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/roslib@1/build/roslib.min.js"></script>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col items-center p-4 antialiased">
+
+    <header class="w-full max-w-md text-center my-6">
+        <h1 class="text-2xl font-black text-slate-800 tracking-tight">🤖 ROBOT CONTROL</h1>
+        <p class="text-sm text-slate-500 mt-1">모바일 로봇 음성 및 주행 제어 시스템</p>
+    </header>
+
+    <div class="w-full max-w-md bg-white p-6 rounded-2xl shadow-sm border border-slate-200 text-center mb-6">
+        <h2 class="text-lg font-bold text-slate-700 mb-2">로봇 시스템 연결</h2>
+        <p class="text-xs text-slate-400 mb-4 font-mono" id="detected_ip">감지된 로봇 주소: 확인 중...</p>
+        
+        <button onclick="connectROS()" id="connect_btn" class="w-full bg-blue-600 text-white px-4 py-3 rounded-xl text-md font-bold hover:bg-blue-700 active:scale-[0.98] transition-all shadow-md shadow-blue-100">
+            로봇에 연결하기
+        </button>
+        
+        <div id="status_box" class="mt-2 hidden p-3 rounded-xl bg-slate-50 border border-slate-100">
+            <p id="status" class="text-sm text-slate-500 font-medium">🔴 연결 대기 중</p>
+        </div>
+    </div>
+
+    <div id="control_panel" class="w-full max-w-md bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-6 hidden animate-fade-in">
+        <h2 class="text-lg font-bold text-slate-700 mb-4">📍 구역별 안내 명령</h2>
+        
+        <div id="controller_grid" class="grid grid-cols-2 gap-4">
+            </div>
+    </div>
+
+    <footer class="w-full max-w-md text-center mt-auto py-4">
+        <p class="text-xs text-slate-400">ROS2 Jazzy x Rosbridge Web Server</p>
+    </footer>
+
+    <script>
+        let ros = null;
+        let voiceTopic = null;
+        
+        // 웹페이지를 띄워준 젯슨 나노의 IP를 브라우저가 자동으로 알아냅니다.
+        const robotIp = window.location.hostname || "localhost";
+        document.getElementById('detected_ip').innerText = `감지된 로봇 주소: ${robotIp}:9091`;
+
+        // 제어할 구역 목록 정의
+        const locations = ["구역1", "구역2", "구역3", "출입구"];
+        const grid = document.getElementById('controller_grid');
+
+        // 구역별 버튼 UI 동적 생성
+        locations.forEach(loc => {
+            const card = document.createElement('div');
+            card.className = "bg-slate-50 border border-slate-100 p-3 rounded-xl flex flex-col gap-2 items-center text-center";
+            
+            const title = document.createElement('span');
+            title.className = "text-sm font-bold text-slate-700";
+            title.innerText = loc;
+
+            const btn = document.createElement('button');
+            btn.className = "w-full bg-slate-800 text-white text-xs font-semibold py-2 px-3 rounded-lg hover:bg-slate-900 active:scale-95 transition-all";
+            btn.innerText = "이동 및 안내";
+            btn.onclick = () => sendCommand(loc);
+
+            card.appendChild(title);
+            card.appendChild(btn);
+            grid.appendChild(card);
+        });
+
+        // ROS2 연결 함수
+        function connectROS() {
+            const statusText = document.getElementById('status');
+            const statusBox = document.getElementById('status_box');
+            const connectBtn = document.getElementById('connect_btn');
+            const controlPanel = document.getElementById('control_panel');
+
+            statusBox.classList.remove('hidden');
+            statusText.innerText = "🔄 로봇에 연결을 시도하는 중...";
+            statusText.className = "text-sm text-amber-600 font-semibold";
+
+            // 자동 감지된 IP와 우회한 9091 포트로 웹소켓 연결
+            ros = new ROSLIB.Ros({
+                url : `ws://${robotIp}:9091`
+            });
+
+            // 연결 성공 시
+            ros.on('connection', function() {
+                statusText.innerText = "🟢 로봇 시스템과 연결 완료!";
+                statusText.className = "text-sm text-green-600 font-bold";
+                
+                // 연결 버튼은 숨기고 제어 패널을 표시
+                connectBtn.classList.add('hidden');
+                controlPanel.classList.remove('hidden');
+                
+                // 음성 안내용 ROS2 토픽 설정
+                voiceTopic = new ROSLIB.Topic({
+                    ros : ros,
+                    name : '/nav_voice_command',
+                    messageType : 'std_msgs/String'
+                });
+            });
+
+            // 연결 에러 발생 시
+            ros.on('error', function(error) {
+                statusText.innerText = "❌ 연결 실패! 터미널의 rosbridge 상태를 확인하세요.";
+                statusText.className = "text-sm text-red-600 font-bold";
+                console.error("ROSBridge Error:", error);
+            });
+
+            // 연결이 끊어졌을 시
+            ros.on('close', function() {
+                statusText.innerText = "🔴 로봇과 연결이 끊어졌습니다.";
+                statusText.className = "text-sm text-slate-500 font-medium";
+                
+                // UI 원상복구
+                connectBtn.classList.remove('hidden');
+                controlPanel.classList.add('hidden');
+            });
+        }
+
+        // 토픽 발행(명령 전송) 함수
+        function sendCommand(location) {
+            if (!voiceTopic) {
+                alert("로봇과 연결되어 있지 않습니다!");
+                return;
+            }
+
+            // ROS2 std_msgs/String 형식에 맞게 메시지 생성
+            const msg = new ROSLIB.Message({
+                data: location
+            });
+
+            // 토픽 발행
+            voiceTopic.publish(msg);
+            console.log(`[발행 완료] /nav_voice_command -> ${location}`);
+            
+            // 사용자 피드백 토스트/알림 대용 단순 로그 효과
+            const statusText = document.getElementById('status');
+            const originalText = statusText.innerText;
+            const originalClass = statusText.className;
+            
+            statusText.innerText = `🚀 ${location} 명령 전송 완료!`;
+            statusText.className = "text-sm text-blue-600 font-bold";
+            
+            setTimeout(() => {
+                statusText.innerText = originalText;
+                statusText.className = originalClass;
+            }, 1500);
+        }
+    </script>
+</body>
+</html>
