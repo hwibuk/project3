@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>pick_place_pkg</name>
+  <version>0.0.0</version>
+  <description>Pick and place with moveit_py</description>
+  <maintainer email="hwibuk@todo.todo">hwibuk</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>moveit_py</exec_depend>
+  <exec_depend>mycobot_280_moveit2</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
